@@ -547,7 +547,7 @@ define([
     Cesium3DTileBatchTable.prototype.applyStyle = function(style) {
         if (!defined(style)) {
             this.setAllColor(DEFAULT_COLOR_VALUE);
-            this.setAllShow(true);
+            this.setAllShow(DEFAULT_SHOW_VALUE);
             return;
         }
 
@@ -963,6 +963,7 @@ define([
                'void tile_color(vec4 tile_featureColor) \n' +
                '{ \n' +
                '    tile_main(); \n' +
+               '    tile_featureColor = czm_gammaCorrect(tile_featureColor); \n' +
                '    gl_FragColor.a *= tile_featureColor.a; \n' +
                '    float highlight = ceil(tile_colorBlend); \n' +
                '    gl_FragColor.rgb *= mix(tile_featureColor.rgb, vec3(1.0), highlight); \n' +
@@ -1044,6 +1045,7 @@ define([
         // The color blend mode is intended for the RGB channels so alpha is always just multiplied.
         // gl_FragColor is multiplied by the tile color only when tile_colorBlend is 0.0 (highlight)
         var highlight =
+            '    tile_featureColor = czm_gammaCorrect(tile_featureColor); \n' +
             '    gl_FragColor.a *= tile_featureColor.a; \n' +
             '    float highlight = ceil(tile_colorBlend); \n' +
             '    gl_FragColor.rgb *= mix(tile_featureColor.rgb, vec3(1.0), highlight); \n';
@@ -1181,7 +1183,7 @@ define([
     };
 
     function getColorBlend(batchTable) {
-        var tileset = batchTable._content._tileset;
+        var tileset = batchTable._content.tileset;
         var colorBlendMode = tileset.colorBlendMode;
         var colorBlendAmount = tileset.colorBlendAmount;
         if (colorBlendMode === Cesium3DTileColorBlendMode.HIGHLIGHT) {
@@ -1246,14 +1248,13 @@ define([
         var commandEnd = commandList.length;
         var tile = this._content._tile;
         var finalResolution = tile._finalResolution;
-        var tileset = tile._tileset;
+        var tileset = tile.tileset;
         var bivariateVisibilityTest = tileset._skipLevelOfDetail && tileset._hasMixedContent && frameState.context.stencilBuffer;
         var styleCommandsNeeded = getStyleCommandsNeeded(this);
 
         for (var i = commandStart; i < commandEnd; ++i) {
             var command = commandList[i];
             var derivedCommands = command.derivedCommands.tileset;
-            // Command may be marked dirty from Model shader recompilation for clipping planes
             if (!defined(derivedCommands) || command.dirty) {
                 derivedCommands = {};
                 command.derivedCommands.tileset = derivedCommands;
@@ -1261,13 +1262,10 @@ define([
                 command.dirty = false;
             }
 
-            updateDerivedCommand(derivedCommands.originalCommand, command);
-
             if (styleCommandsNeeded !== StyleCommandsNeeded.ALL_OPAQUE) {
                 if (!defined(derivedCommands.translucent)) {
                     derivedCommands.translucent = deriveTranslucentCommand(derivedCommands.originalCommand);
                 }
-                updateDerivedCommand(derivedCommands.translucent, command);
             }
 
             if (bivariateVisibilityTest) {
@@ -1280,7 +1278,6 @@ define([
                 if (!defined(derivedCommands.stencil) || tile._selectionDepth !== getLastSelectionDepth(derivedCommands.stencil)) {
                     derivedCommands.stencil = deriveStencilCommand(derivedCommands.originalCommand, tile._selectionDepth);
                 }
-                updateDerivedCommand(derivedCommands.stencil, command);
             }
 
             var opaqueCommand = bivariateVisibilityTest ? derivedCommands.stencil : derivedCommands.originalCommand;
@@ -1315,12 +1312,6 @@ define([
             }
         }
     };
-
-    function updateDerivedCommand(derivedCommand, command) {
-        derivedCommand.castShadows = command.castShadows;
-        derivedCommand.receiveShadows = command.receiveShadows;
-        derivedCommand.primitiveType = command.primitiveType;
-    }
 
     function getStyleCommandsNeeded(batchTable) {
         var translucentFeaturesLength = batchTable._translucentFeaturesLength;
@@ -1483,7 +1474,7 @@ define([
             }
 
             batchTable._pickTexture = createTexture(batchTable, context, bytes);
-            content._tileset._statistics.batchTableByteLength += batchTable._pickTexture.sizeInBytes;
+            content.tileset._statistics.batchTableByteLength += batchTable._pickTexture.sizeInBytes;
         }
     }
 
